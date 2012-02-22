@@ -47,9 +47,7 @@ function! GetScalaIndent()
   let thisline = getline(v:lnum)
   if thisline =~ '^\s*[})]' 
         \ || thisline =~ '^\s*</[a-zA-Z][^>]*>'
-    return ind - &l:shiftwidth
-  elseif prevline =~ '{[^}]*$'
-    return ind + &l:shiftwidth
+    let ind = ind - &l:shiftwidth
   endif
 
   " Add a 'shiftwidth' after lines that start a block
@@ -58,6 +56,7 @@ function! GetScalaIndent()
   if prevline =~ '^\s*\<\(\(else\s\+\)\?if\|for\|while\)\>.*)\s*$'
         \ || prevline =~ '^\s*\<\(va[lr]\|def\)\>.*=\s*$'
         \ || prevline =~ '^\s*\<else\>\s*$'
+        \ || prevline =~ '{[^}]*$'
     let ind = ind + &l:shiftwidth
   endif
 
