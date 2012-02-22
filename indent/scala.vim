@@ -10,15 +10,15 @@ let b:did_indent = 1
 
 setlocal indentexpr=GetScalaIndent()
 
-setlocal indentkeys=0{,0},0),!^F,<>>,<CR>
+setlocal indentkeys=0{,0},0),!^F,<>>,o,O,<Return>,0=extends,0=with
 
-setlocal autoindent sw=2 et
+setlocal autoindent "sw=2 et
 
 if exists("*GetScalaIndent")
   finish
 endif
 
-function! CountParens(line)
+function! s:CountParens(line)
   let line = substitute(a:line, '"\(.\|\\"\)*"', '', 'g')
   let open = substitute(line, '[^(]', '', 'g')
   let close = substitute(line, '[^)]', '', 'g')
@@ -38,45 +38,44 @@ function! GetScalaIndent()
   let prevline = getline(lnum)
 
   "Indent html literals
-  if prevline !~ '/>\s*$' && prevline =~ '^\s*<[a-zA-Z][^>]*>\s*$'
-    return ind + &shiftwidth
-  endif
-
-  " Add a 'shiftwidth' after lines that start a block
-  " If if, for or while end with ), this is a one-line block
-  " If val, var, def end with =, this is a one-line block
-  if prevline =~ '^\s*\<\(\(else\s\+\)\?if\|for\|while\|va[lr]\|def\)\>.*[)=]\s*$'
-        \ || prevline =~ '^\s*\<else\>\s*$'
-        \ || prevline =~ '{\s*$'
-    let ind = ind + &shiftwidth
-  endif
-
-  " If parenthesis are unbalanced, indent or dedent
-  let c = CountParens(prevline)
-  echo c
-  if c > 0
-    let ind = ind + &shiftwidth
-  elseif c < 0
-    let ind = ind - &shiftwidth
-  endif
-  
-  " Dedent after if, for, while and val, var, def without block
-  let pprevline = getline(prevnonblank(lnum - 1))
-  if pprevline =~ '^\s*\<\(\(else\s\+\)\?if\|for\|while\|va[lr]\|def\)\>.*[)=]\s*$'
-        \ || pprevline =~ '^\s*\<else\>\s*$'
-    let ind = ind - &shiftwidth
-  endif
-
-  " Align 'for' clauses nicely
-  if prevline =~ '^\s*\<for\> (.*;\s*$'
-    let ind = ind - &shiftwidth + 5
+  if prevline !~ '/>\s*$'
+        \ && prevline =~ '^\s*<[a-zA-Z][^>]*>\s*$'
+    return ind + &l:shiftwidth
   endif
 
   " Subtract a 'shiftwidth' on '}' or html
   let thisline = getline(v:lnum)
   if thisline =~ '^\s*[})]' 
         \ || thisline =~ '^\s*</[a-zA-Z][^>]*>'
-    let ind = ind - &shiftwidth
+    return ind - &l:shiftwidth
+  elseif prevline =~ '{[^}]*$'
+    return ind + &l:shiftwidth
+  endif
+
+  " Add a 'shiftwidth' after lines that start a block
+  " If if, for or while end with ), this is a one-line block
+  " If val, var, def end with =, this is a one-line block
+  if prevline =~ '^\s*\<\(\(else\s\+\)\?if\|for\|while\)\>.*)\s*$'
+        \ || prevline =~ '^\s*\<\(va[lr]\|def\)\>.*=\s*$'
+        \ || prevline =~ '^\s*\<else\>\s*$'
+    let ind = ind + &l:shiftwidth
+  endif
+
+  " If parenthesis are unbalanced, indent or dedent
+  let cnt = s:CountParens(prevline)
+  echo cnt
+  if cnt > 0
+    let ind = ind + &l:shiftwidth
+  elseif cnt < 0
+    let ind = ind - &l:shiftwidth
+  endif
+  
+  " Dedent after if, for, while and val, var, def without block
+  let pprevline = getline(prevnonblank(lnum - 1))
+  if pprevline =~ '^\s*\<\(\(else\s\+\)\?if\|for\|while\)\>.*)\s*$'
+        \ || pprevline =~ '^\s*\<\(va[lr]\|def\)\>.*=\s*$'
+        \ || pprevline =~ '^\s*\<else\>\s*$'
+    let ind = ind - &l:shiftwidth
   endif
 
   return ind
