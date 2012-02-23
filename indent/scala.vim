@@ -55,10 +55,10 @@ function! GetScalaIndent()
   endif
 
   let prevline = getline(lnum)
-  let startbrk = matchstr(prevline, '[{(]')
+  let startbrk = matchstr(prevline, '[{(][^{(]*$')
   if strlen(startbrk)
+    let startbrk = startbrk[0]
     let endbrk = startbrk == '{' ? '}' : ')'
-    call cursor(v:lnum, 1)
     if s:FindBrkPair(startbrk, endbrk) == lnum
       return ind + &shiftwidth
     endif
@@ -96,7 +96,7 @@ function! GetScalaIndent()
   elseif cnt < 0
     let ind = ind - &shiftwidth
   endif
-  
+
   " Dedent after if, for, while and val, var, def without block
   let pprevline = getline(prevnonblank(lnum - 1))
   if pprevline =~ '^\s*\<\%(\%(else\s\+\)\?if\|for\|while\)\>.*)\s*$'
