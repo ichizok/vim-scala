@@ -18,15 +18,21 @@ if exists("*GetScalaIndent")
   finish
 endif
 
-function! s:FindBrkPair(startbrk, endbrk)
-    call cursor(v:lnum, 1)
-    return searchpair(a:startbrk, '', a:endbrk, 'bnW', 
-          \ 'synIDattr(synID(line("."), col("."), 0), "name") =~? "string\\|comment"')
+function! s:IsDeclStatement(line)
+  return a:line =~ '^\s*\%(\<\%(override\|final\|\%(protected\|private\)\%(\[\w\+\]\)\?\)\s\+\)*\<\%(va[lr]\|def\)\>.*=\s*$'
+        \ || a:line =~ '^\s*\<\%(\%(else\s\+\)\?if\|for\|while\)\>.*)\s*$'
+        \ || a:line =~ '^\s*\<else\>\s*$'
 endfunction
 
 function! s:IsCaseClause(line)
   return a:line =~ '^\s*\<case\>.*=>'
         \ && a:line !~ '^\s*\<case\>\s*\<class\>'
+endfunction
+
+function! s:FindBrkPair(startbrk, endbrk, lnum)
+    call cursor(a:lnum, 1)
+    return searchpair(a:startbrk, '', a:endbrk, 'bnW', 
+          \ 'synIDattr(synID(line("."), col("."), 0), "name") =~? "string\\|comment"')
 endfunction
 
 function! s:CountParens(line)
@@ -47,20 +53,34 @@ function! GetScalaIndent()
   endif
 
   let thisline = getline(v:lnum)
-  let endbrk = matchstr(thisline, '^\s*[})]')
-  if strlen(endbrk)
-    let endbrk = substitute(endbrk, '^\s*', '', '')
+  if thisline =~ '^\s*[})]'
+    let endbrk = matchstr(thisline, '[})]')
     let startbrk = endbrk == '}' ? '{' : '('
-    return indent(s:FindBrkPair(startbrk, endbrk))
+    let pairlnum = s:FindBrkPair(startbrk, endbrk, v:lnum)
+    return indent(s:CountParens(getline(pairlnum)) < 0
+          \ ? s:FindBrkPair('(', ')', pairlnum) : pairlnum)
   endif
 
+  " If parenthesis are unbalanced, indent or dedent
   let prevline = getline(lnum)
-  let startbrk = matchstr(prevline, '[{(][^{(]*$')
-  if strlen(startbrk)
-    let startbrk = startbrk[0]
-    let endbrk = startbrk == '{' ? '}' : ')'
-    if s:FindBrkPair(startbrk, endbrk) == lnum
+  let nparens = s:CountParens(prevline)
+  echo nparens
+  if nparens > 0
+    let ind = ind + &shiftwidth
+  elseif nparens < 0
+    let ind = ind - &shiftwidth
+  endif
+
+  if prevline =~ '{[^{]*$'
+    if s:FindBrkPair('{', '}', v:lnum) == lnum
       return ind + &shiftwidth
+    endif
+  endif
+
+  if prevline =~ '^\s*}\+\s*$'
+    let domnlnum = prevnonblank(s:FindBrkPair('{', '}', lnum) - 1)
+    if s:IsDeclStatement(getline(domnlnum))
+      return ind - &shiftwidth
     endif
   endif
 
@@ -76,32 +96,17 @@ function! GetScalaIndent()
     return ind + &shiftwidth
   endif
 
-  let acsspc = '\<\%(public\|protected\|private\)\?\>.*'
-
   " Add a 'shiftwidth' after lines that start a block
   " If if, for or while end with ), this is a one-line block
   " If val, var, def end with =, this is a one-line block
-  if prevline =~ '^\s*\<\%(\%(else\s\+\)\?if\|for\|while\)\>.*)\s*$'
-        \ || prevline =~ '^\s*'.acsspc.'\<\%(va[lr]\|def\)\>.*=\s*$'
-        \ || prevline =~ '^\s*\<else\>\s*$'
+  if s:IsDeclStatement(prevline)
         \ || s:IsCaseClause(prevline)
     let ind = ind + &shiftwidth
   endif
 
-  " If parenthesis are unbalanced, indent or dedent
-  let cnt = s:CountParens(prevline)
-  echo cnt
-  if cnt > 0
-    let ind = ind + &shiftwidth
-  elseif cnt < 0
-    let ind = ind - &shiftwidth
-  endif
-
   " Dedent after if, for, while and val, var, def without block
   let pprevline = getline(prevnonblank(lnum - 1))
-  if pprevline =~ '^\s*\<\%(\%(else\s\+\)\?if\|for\|while\)\>.*)\s*$'
-        \ || pprevline =~ '^\s*'.acsspc.'\<\%(va[lr]\|def\)\>.*=\s*$'
-        \ || pprevline =~ '^\s*\<else\>\s*$'
+  if s:IsDeclStatement(pprevline)
     let ind = ind - &shiftwidth
   endif
 
