@@ -61,27 +61,18 @@ function! GetScalaIndent()
           \ ? s:FindBrkPair('(', ')', pairlnum) : pairlnum)
   endif
 
-  " If parenthesis are unbalanced, indent or dedent
   let prevline = getline(lnum)
-  let nparens = s:CountParens(prevline)
-  echo nparens
-  if nparens > 0
-    let ind = ind + &shiftwidth
-  elseif nparens < 0
-    let ind = ind - &shiftwidth
-  endif
-
   if prevline =~ '{[^{]*$'
-    if s:FindBrkPair('{', '}', v:lnum) == lnum
-      return ind + &shiftwidth
+    let pairlnum = s:FindBrkPair('{', '}', v:lnum)
+    if pairlnum == lnum
+      return indent(s:CountParens(getline(pairlnum)) < 0
+            \ ? s:FindBrkPair('(', ')', pairlnum) : pairlnum) + &shiftwidth
     endif
   endif
 
-  if prevline =~ '^\s*}\+\s*$'
+  if prevline =~ '^\s*}[})]*\s*$'
     let domnlnum = prevnonblank(s:FindBrkPair('{', '}', lnum) - 1)
-    if s:IsDeclStatement(getline(domnlnum))
-      return ind - &shiftwidth
-    endif
+    return s:IsDeclStatement(getline(domnlnum)) ? ind - &shiftwidth : ind
   endif
 
   " Subtract a 'shiftwidth' on html
@@ -107,6 +98,15 @@ function! GetScalaIndent()
   " Dedent after if, for, while and val, var, def without block
   let pprevline = getline(prevnonblank(lnum - 1))
   if s:IsDeclStatement(pprevline)
+    let ind = ind - &shiftwidth
+  endif
+
+  " If parenthesis are unbalanced, indent or dedent
+  let nparens = s:CountParens(prevline)
+  echo nparens
+  if nparens > 0
+    let ind = ind + &shiftwidth
+  elseif nparens < 0
     let ind = ind - &shiftwidth
   endif
 
