@@ -36,7 +36,7 @@ function! s:FindBrkPair(startbrk, endbrk, lnum)
 endfunction
 
 function! s:CountParens(line)
-  let line = substitute(a:line, '"\%(.\|\\"\)*"', '', 'g')
+  let line = substitute(a:line, '".\{-}[^\\]\?"', '', 'g')
   let open = substitute(line, '[^(]', '', 'g')
   let close = substitute(line, '[^)]', '', 'g')
   return strlen(open) - strlen(close)
