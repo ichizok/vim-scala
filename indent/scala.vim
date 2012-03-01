@@ -18,40 +18,34 @@ if exists("*GetScalaIndent")
   finish
 endif
 
-function! s:IsClassDefinition(line)
-  return a:line =~ '\<\%(class\|object\|trait\)\>'
-        \ || a:line =~ '^\s*\<\%(extend\|with\)'
+function! s:is_case_clause(line)
+  return a:line =~ '^\s*\<case\>.\{-}=>'
+        \ && a:line !~ '\<class\>'
 endfunction
 
-function! s:IsCtrlStatement(lnum)
+function! s:is_sentense_continued(lnum)
   let line = getline(a:lnum)
-  let endp = match(line, ')\s*$') + 1
-  if endp > 0
-    call cursor(a:lnum, endp)
+  let closep = match(line, ')\s*$') + 1
+  if closep > 0
+    call cursor(a:lnum, closep)
     let [lnum, colm] = searchpairpos('(', '', ')', 'bnW',
           \ 'synIDattr(synID(line("."), col("."), 0), "name") =~? "string\\|comment"')
     let line = getline(lnum)
     return strpart(line, 0, colm) =~ '^\s*\<\%(\%(else\s\+\)\?if\|for\|while\)\s*($'
   endif
-  return line =~ '^\s*else\s*$'
+  return line =~ '\<\%(va[lr]\|def\)\>.\{-}=\s*$'
+        \ || line =~ '^\s*else\s*$'
 endfunction
 
-function! s:IsDeclStatement(line)
-  return a:line =~ '\<\%(va[lr]\|def\)\>.*=\s*$'
+function! s:find_parens_pair(openp, closep, ...)
+  let lnum = a:0 >= 1 ? a:1 : v:lnum
+  let colm = a:0 >= 2 ? a:2 : 1
+  call cursor(lnum, colm)
+  return searchpair(a:openp, '', a:closep, 'bnW',
+        \ 'synIDattr(synID(line("."), col("."), 0), "name") =~? "string\\|comment"')
 endfunction
 
-function! s:IsCaseClause(line)
-  return a:line =~ '^\s*case\>.*=>'
-        \ && a:line !~ '^\s*case\s\+class\>'
-endfunction
-
-function! s:FindBrktPair(startbrkt, endbrkt, lnum)
-    call cursor(a:lnum, 1)
-    return searchpair(a:startbrkt, '', a:endbrkt, 'bnW',
-          \ 'synIDattr(synID(line("."), col("."), 0), "name") =~? "string\\|comment"')
-endfunction
-
-function! s:CountParens(line)
+function! s:count_parens(line)
   let line = substitute(a:line, '".\{-}[^\\]\?"', '', 'g')
   let open = substitute(line, '[^(]', '', 'g')
   let close = substitute(line, '[^)]', '', 'g')
@@ -68,34 +62,54 @@ function! GetScalaIndent()
     return 0
   endif
 
-  let thisline = getline(v:lnum)
-  if thisline =~ '^\s*[})]'
-    let endbrkt = matchstr(thisline, '[})]')
-    let startbrkt = endbrkt == '}' ? '{' : '('
-    let pairlnum = s:FindBrktPair(startbrkt, endbrkt, v:lnum)
-    return indent(s:CountParens(getline(pairlnum)) < 0
-          \ ? s:FindBrktPair('(', ')', pairlnum) : pairlnum)
+  let currline = getline(v:lnum)
+  if currline =~ '^\s*[})]'
+    let closep = matchstr(currline, '[})]')
+    let openp = closep == '}' ? '{' : '('
+    let pairlnum = s:find_parens_pair(openp, closep)
+    if pairlnum != v:lnum
+      let ind = indent(s:count_parens(getline(pairlnum)) < 0
+            \ ? s:find_parens_pair('(', ')', pairlnum) : pairlnum)
+      return getline(pairlnum) =~ '^\s*\<\%(extends\|with\)\>'
+            \ ? ind - &shiftwidth * 2 : ind
+    endif
   endif
 
   let prevline = getline(prevlnum)
+  if currline =~ '^\s*\<\%(extends\|with\)\>'
+    if prevline =~ '\<\%(class\|object\|trait\)\>'
+      return ind + &shiftwidth * 2
+    elseif s:count_parens(prevline) < 0
+      return ind + &shiftwidth
+    endif
+    return ind
+  endif
+
+  if prevline =~ '^\s*\<\%(extends\|with\)\>'
+    return ind - &shiftwidth * (prevline =~ '{\s*$' ? 1 : 2)
+  endif
+
   if prevline =~ '{[^{]*$'
-    let pairlnum = s:FindBrktPair('{', '}', v:lnum)
+    let pairlnum = s:find_parens_pair('{', '}')
     if pairlnum == prevlnum
-      return indent(s:CountParens(getline(pairlnum)) < 0
-            \ ? s:FindBrktPair('(', ')', pairlnum) : pairlnum) + &shiftwidth
+      return indent(s:count_parens(getline(pairlnum)) < 0
+            \ ? s:find_parens_pair('(', ')', pairlnum) : pairlnum) + &shiftwidth
     endif
   endif
 
   if prevline =~ '^\s*}[})]*\s*$'
-    let domnlnum = prevnonblank(s:FindBrktPair('{', '}', prevlnum) - 1)
-    return (s:IsCtrlStatement(domnlnum)
-          \ || s:IsDeclStatement(getline(domnlnum))) ? ind - &shiftwidth : ind
+    let domnlnum = prevnonblank(s:find_parens_pair('{', '}', prevlnum) - 1)
+    return s:is_sentense_continued(domnlnum) ? ind - &shiftwidth : ind
   endif
 
   " Subtract a 'shiftwidth' on html
-  if thisline =~ '^\s*</[a-zA-Z][^>]*>'
-        \ || s:IsCaseClause(thisline)
+  if currline =~ '^\s*</[a-zA-Z][^>]*>'
     let ind = ind - &shiftwidth
+  endif
+
+  if s:is_case_clause(currline)
+    let domnlnum = s:find_parens_pair('{', '}')
+    return indent(domnlnum) + &shiftwidth
   endif
 
   "Indent html literals
@@ -107,24 +121,23 @@ function! GetScalaIndent()
   " Add a 'shiftwidth' after lines that start a block
   " If if, for or while end with ), this is a one-line block
   " If val, var, def end with =, this is a one-line block
-  if s:IsCtrlStatement(prevlnum)
-        \ || s:IsDeclStatement(prevline)
-        \ || s:IsCaseClause(prevline)
+  if s:is_sentense_continued(prevlnum)
+        \ || s:is_case_clause(prevline)
     let ind = ind + &shiftwidth
   endif
 
   " If parenthesis are unbalanced, indent or dedent
-  let nparens = s:CountParens(prevline)
+  let nparens = s:count_parens(prevline)
   if nparens > 0
-    let ind = ind + &shiftwidth
+    return ind + &shiftwidth
   elseif nparens < 0
+    let prevlnum = s:find_parens_pair('(', ')', prevline)
     let ind = ind - &shiftwidth
   endif
 
   " Dedent after if, for, while and val, var, def without block
   let pprevlnum = prevnonblank(prevlnum - 1)
-  let pprevline = getline(pprevlnum)
-  if s:IsCtrlStatement(pprevlnum) || s:IsDeclStatement(pprevline)
+  if s:is_sentense_continued(pprevlnum)
     let ind = ind - &shiftwidth
   endif
 
