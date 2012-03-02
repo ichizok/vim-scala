@@ -23,18 +23,25 @@ function! s:is_case_clause(line)
         \ && a:line !~ '\<class\>'
 endfunction
 
-function! s:is_sentense_continued(lnum)
-  let line = getline(a:lnum)
-  let closep = match(line, ')\s*$') + 1
-  if closep > 0
-    call cursor(a:lnum, closep)
-    let [lnum, colm] = searchpairpos('(', '', ')', 'bnW',
-          \ 'synIDattr(synID(line("."), col("."), 0), "name") =~? "string\\|comment"')
-    let line = getline(lnum)
-    return strpart(line, 0, colm) =~ '^\s*\<\%(\%(else\s\+\)\?if\|for\|while\)\s*($'
+function! s:is_sentense_continued(line)
+  if a:line =~ '^\s*\%(\%(else\s\+\)\?if\|for\|while\)\s*('
+    let colm = stridx(a:line, '(')
+    let obvs = 1
+    for i in range(colm + 1, strlen(a:line) - 1)
+      if a:line[i] == '('
+        let obvs += 1
+      elseif a:line[i] == ')'
+        let obvs -= 1
+      endif
+      if obvs == 0
+        let colm = i
+        break
+      endif
+    endfor
+    return match(a:line, ')\s*$', colm) != -1
   endif
-  return line =~ '\<\%(va[lr]\|def\)\>.\{-}=\s*$'
-        \ || line =~ '^\s*else\s*$'
+  return a:line =~ '\<\%(va[lr]\|def\)\>.\{-}=\s*$'
+        \ || a:line =~ '^\s*else\s*$'
 endfunction
 
 function! s:find_parens_pair(openp, closep, ...)
@@ -50,6 +57,17 @@ function! s:count_parens(line)
   let open = substitute(line, '[^(]', '', 'g')
   let close = substitute(line, '[^)]', '', 'g')
   return strlen(open) - strlen(close)
+endfunction
+
+function! s:get_virtline(lnum)
+  let lnum = a:lnum
+  let line = getline(lnum)
+  let nparens = s:count_parens(line)
+  if nparens < 0
+    let lnum = s:find_parens_pair('(', ')', lnum)
+    let line = getline(lnum).line
+  endif
+  return [lnum, line, nparens]
 endfunction
 
 function! GetScalaIndent()
@@ -75,7 +93,14 @@ function! GetScalaIndent()
     endif
   endif
 
-  let prevline = getline(prevlnum)
+  " If parenthesis are unbalanced, indent or dedent
+  let [prevlnum, prevline, nparens] = s:get_virtline(prevlnum)
+  if nparens > 0
+    return ind + &shiftwidth
+  elseif nparens < 0
+    let ind = indent(prevlnum)
+  endif
+
   if currline =~ '^\s*\<\%(extends\|with\)\>'
     if prevline =~ '\<\%(class\|object\|trait\)\>'
       return ind + &shiftwidth * 2
@@ -89,17 +114,17 @@ function! GetScalaIndent()
     return ind - &shiftwidth * (prevline =~ '{\s*$' ? 1 : 2)
   endif
 
-  if prevline =~ '{[^{]*$'
-    let pairlnum = s:find_parens_pair('{', '}')
-    if pairlnum == prevlnum
-      return indent(s:count_parens(getline(pairlnum)) < 0
-            \ ? s:find_parens_pair('(', ')', pairlnum) : pairlnum) + &shiftwidth
+  if prevline =~ '{[^{}]*$'
+    if s:count_parens(prevline) < 0
+      let ind = indent(s:find_parens_pair('(', ')', prevlnum))
     endif
+    return ind + &shiftwidth
   endif
 
   if prevline =~ '^\s*}[})]*\s*$'
     let domnlnum = prevnonblank(s:find_parens_pair('{', '}', prevlnum) - 1)
-    return s:is_sentense_continued(domnlnum) ? ind - &shiftwidth : ind
+    return s:is_sentense_continued(s:get_virtline(domnlnum)[1])
+          \ ? ind - &shiftwidth : ind
   endif
 
   " Subtract a 'shiftwidth' on html
@@ -121,23 +146,14 @@ function! GetScalaIndent()
   " Add a 'shiftwidth' after lines that start a block
   " If if, for or while end with ), this is a one-line block
   " If val, var, def end with =, this is a one-line block
-  if s:is_sentense_continued(prevlnum)
+  if s:is_sentense_continued(prevline)
         \ || s:is_case_clause(prevline)
     let ind = ind + &shiftwidth
   endif
 
-  " If parenthesis are unbalanced, indent or dedent
-  let nparens = s:count_parens(prevline)
-  if nparens > 0
-    return ind + &shiftwidth
-  elseif nparens < 0
-    let prevlnum = s:find_parens_pair('(', ')', prevline)
-    let ind = ind - &shiftwidth
-  endif
-
   " Dedent after if, for, while and val, var, def without block
   let pprevlnum = prevnonblank(prevlnum - 1)
-  if s:is_sentense_continued(pprevlnum)
+  if s:is_sentense_continued(s:get_virtline(pprevlnum)[1])
     let ind = ind - &shiftwidth
   endif
 
