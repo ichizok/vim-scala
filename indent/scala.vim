@@ -8,15 +8,13 @@ if exists("b:did_indent")
 endif
 let b:did_indent = 1
 
-let b:undo_indent = 'setl cin< cino< indentexpr< indentkeys<'
-
 setlocal indentexpr=GetScalaIndent()
-
 setlocal indentkeys=0{,0},0),!^F,<>>,o,O,<Return>,0=extends,0=with
 
-if exists("*GetScalaIndent")
-  finish
-endif
+let b:undo_indent = 'setlocal
+      \ indentexpr< 
+      \ indentkeys<
+      \'
 
 function! s:is_case_clause(line)
   return a:line =~ '^\s*\<case\>.\{-}=>'
