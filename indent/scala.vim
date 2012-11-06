@@ -12,8 +12,11 @@ setlocal indentexpr=GetScalaIndent()
 setlocal indentkeys=0{,0},0),!^F,<>>,o,O,<Return>,0=extends,0=with
 
 let b:undo_indent = 'setlocal
+      \ autoindent<
+      \ expandtab<
       \ indentexpr< 
       \ indentkeys<
+      \ shiftwidth<
       \'
 
 function! s:is_case_clause(line)
