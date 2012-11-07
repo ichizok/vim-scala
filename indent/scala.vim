@@ -17,6 +17,7 @@ let b:undo_indent = 'setlocal
       \ indentexpr< 
       \ indentkeys<
       \ shiftwidth<
+      \ tabstop<
       \'
 
 function! s:is_case_clause(line)
