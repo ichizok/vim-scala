@@ -1,6 +1,6 @@
 " Vim syntax file
 " Language   : Scala (http://scala-lang.org/)
-" Maintainers: Stefan Matthias Aust, Julien Wetterwald
+" Maintainers: Stefan Matthias Aust, Julien Wetterwald, etc.
 " Last Change: 2007 June 13
 
 if version < 600
