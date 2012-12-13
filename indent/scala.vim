@@ -1,7 +1,7 @@
 " Vim indent file
 " Language   : Scala (http://scala-lang.org/)
-" Maintainer : Stefan Matthias Aust
-" Last Change: 2006 Apr 13
+" Maintainer : Stefan Matthias Aust, etc.
+" Last Change: 2012 Dec 13
 
 if exists("b:did_indent")
   finish
@@ -19,6 +19,25 @@ let b:undo_indent = 'setlocal
       \ shiftwidth<
       \ tabstop<
       \'
+
+if exists("*GetScalaIndent")
+  finish
+endif
+let s:keepcpo= &cpo
+set cpo&vim
+
+function! s:skip_blank_and_comments(lnum)
+  let lnum = a:lnum
+  while lnum >= 1
+    let lnum = prevnonblank(lnum)
+    let head = match(getline(lnum), '\S\zs')
+    if synIDattr(synID(lnum, head, 0), 'name') !~? 'string\|comment'
+      break
+    endif
+    let lnum -= 1
+  endwhile
+  return lnum
+endfunction
 
 function! s:is_case_clause(line)
   return a:line =~ '^\s*\<case\>.\{-}=>'
@@ -46,12 +65,17 @@ function! s:is_sentense_continued(line)
         \ || a:line =~ '^\s*else\s*$'
 endfunction
 
-function! s:find_parens_pair(openp, closep, ...)
+function! s:find_parens_pair(parens, ...)
+  let bgnp = a:parens[0]
+  let endp = a:parens[1]
   let lnum = a:0 >= 1 ? a:1 : v:lnum
   let colm = a:0 >= 2 ? a:2 : 1
+  let pos = getpos('.')
   call cursor(lnum, colm)
-  return searchpair(a:openp, '', a:closep, 'bnW',
+  let parenspos = searchpair(bgnp, '', endp, 'bnW',
         \ 'synIDattr(synID(line("."), col("."), 0), "name") =~? "string\\|comment"')
+  call cursor(pos)
+  return parenspos
 endfunction
 
 function! s:count_parens(line)
@@ -61,88 +85,91 @@ function! s:count_parens(line)
   return strlen(open) - strlen(close)
 endfunction
 
-function! s:get_virtline(lnum)
+function! s:get_bound_sentence(lnum)
   let lnum = a:lnum
   let line = getline(lnum)
   let nparens = s:count_parens(line)
   if nparens < 0
-    let lnum = s:find_parens_pair('(', ')', lnum)
+    let lnum = s:find_parens_pair('()', lnum)
     let line = getline(lnum).line
   endif
   return [lnum, line, nparens]
 endfunction
 
 function! GetScalaIndent()
-  " Find a non-blank line above the current line.
-  let prevlnum = prevnonblank(v:lnum - 1)
-  let ind = indent(prevlnum)
-
-  " Hit the start of the file, use zero indent.
-  if ind == -1
-    return 0
+  " If we're in the middle of a comment then just trust cindent
+  let currline = getline(v:lnum)
+  if currline =~ '^\s*\*'
+    return cindent(v:lnum)
   endif
 
-  let currline = getline(v:lnum)
-  if currline =~ '^\s*[})]'
-    let closep = matchstr(currline, '[})]')
-    let openp = closep == '}' ? '{' : '('
-    let pairlnum = s:find_parens_pair(openp, closep)
+  " Find a non-blank/comment line above the current line.
+  let prevlnum = s:skip_blank_and_comments(v:lnum - 1)
+  let indt = indent(prevlnum)
+
+  " Hit the start of the file, use zero indent.
+  if indt == -1 | return 0 | endif
+
+  let idx = match(currline, '^\s*\zs[})]')
+  if idx >= 0
+    let parens = currline[idx] == '}' ? '{}' : '()'
+    let pairlnum = s:find_parens_pair(parens)
     if pairlnum != v:lnum
-      let ind = indent(s:count_parens(getline(pairlnum)) < 0
-            \ ? s:find_parens_pair('(', ')', pairlnum) : pairlnum)
+      let indt = indent(s:count_parens(getline(pairlnum)) < 0
+            \ ? s:find_parens_pair('()', pairlnum) : pairlnum)
       return getline(pairlnum) =~ '^\s*\<\%(extends\|with\)\>'
-            \ ? ind - &shiftwidth * 2 : ind
+            \ ? indt - &shiftwidth * 2 : indt
     endif
   endif
 
   " If parenthesis are unbalanced, indent or dedent
-  let [prevlnum, prevline, nparens] = s:get_virtline(prevlnum)
+  let [prevlnum, prevline, nparens] = s:get_bound_sentence(prevlnum)
   if nparens > 0
-    return ind + &shiftwidth
+    return indt + &shiftwidth
   elseif nparens < 0
-    let ind = indent(prevlnum)
+    let indt = indent(prevlnum)
   endif
 
   if currline =~ '^\s*\<\%(extends\|with\)\>'
     if prevline =~ '\<\%(class\|object\|trait\)\>'
-      return ind + &shiftwidth * 2
+      return indt + &shiftwidth * 2
     elseif s:count_parens(prevline) < 0
-      return ind + &shiftwidth
+      return indt + &shiftwidth
     endif
-    return ind
+    return indt
   endif
 
   if prevline =~ '^\s*\<\%(extends\|with\)\>'
-    return ind - &shiftwidth * (prevline =~ '{\s*$' ? 1 : 2)
+    return indt - &shiftwidth * (prevline =~ '{\s*$' ? 1 : 2)
   endif
 
   if prevline =~ '{[^{}]*$'
     if s:count_parens(prevline) < 0
-      let ind = indent(s:find_parens_pair('(', ')', prevlnum))
+      let indt = indent(s:find_parens_pair('()', prevlnum))
     endif
-    return ind + &shiftwidth
+    return indt + &shiftwidth
   endif
 
   if prevline =~ '^\s*}[})]*\s*$'
-    let domnlnum = prevnonblank(s:find_parens_pair('{', '}', prevlnum) - 1)
-    return s:is_sentense_continued(s:get_virtline(domnlnum)[1])
-          \ ? ind - &shiftwidth : ind
+    let domnlnum = prevnonblank(s:find_parens_pair('{}', prevlnum) - 1)
+    return s:is_sentense_continued(s:get_bound_sentence(domnlnum)[1])
+          \ ? indt - &shiftwidth : indt
   endif
 
   " Subtract a 'shiftwidth' on html
   if currline =~ '^\s*</[a-zA-Z][^>]*>'
-    let ind = ind - &shiftwidth
+    let indt = indt - &shiftwidth
   endif
 
   if s:is_case_clause(currline)
-    let domnlnum = s:find_parens_pair('{', '}')
+    let domnlnum = s:find_parens_pair('{}')
     return indent(domnlnum) + &shiftwidth
   endif
 
   "Indent html literals
   if prevline !~ '/>\s*$'
         \ && prevline =~ '<[a-zA-Z][^>]*>\s*$'
-    return ind + &shiftwidth
+    return indt + &shiftwidth
   endif
 
   " Add a 'shiftwidth' after lines that start a block
@@ -150,14 +177,17 @@ function! GetScalaIndent()
   " If val, var, def end with =, this is a one-line block
   if s:is_sentense_continued(prevline)
         \ || s:is_case_clause(prevline)
-    let ind = ind + &shiftwidth
+    let indt = indt + &shiftwidth
   endif
 
   " Dedent after if, for, while and val, var, def without block
   let pprevlnum = prevnonblank(prevlnum - 1)
-  if s:is_sentense_continued(s:get_virtline(pprevlnum)[1])
-    let ind = ind - &shiftwidth
+  if s:is_sentense_continued(s:get_bound_sentence(pprevlnum)[1])
+    let indt = indt - &shiftwidth
   endif
 
-  return ind
+  return indt
 endfunction
+
+let &cpo = s:keepcpo
+unlet s:keepcpo
