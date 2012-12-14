@@ -40,8 +40,7 @@ setlocal suffixesadd=.scala
 setlocal formatoptions-=t formatoptions+=croql
 
 " Set 'comments' to format dashed lists in comments. Behaves just like C.
-setlocal comments& comments^=sO:*\ -,mO:*\ \ ,exO:*/
-setlocal commentstring=//%s
+setlocal comments=s1:/*,mb:*,ex1:*/:// commentstring=//\ %s
 
 " Restore the saved compatibility options.
 let &cpo = s:save_cpo
