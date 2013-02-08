@@ -7,7 +7,7 @@
 " Author     :   Stepan Koltsov <yozh@mx1.ru>
 
 if exists('g:loaded_vim_scala')
-  finiah
+  finish
 endif
 
 let s:save_cpo = &cpo
